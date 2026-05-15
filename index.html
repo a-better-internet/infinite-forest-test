@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Night Forest - AI Fixes</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #010102;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
+        }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(2, 2, 4, 0.9);
+            color: #fff;
+            z-index: 10;
+            transition: opacity 0.5s ease;
+        }
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            letter-spacing: 2px;
+        }
+        p {
+            font-size: 1.2rem;
+            color: #aaa;
+            margin-bottom: 30px;
+        }
+        .controls {
+            margin-top: 20px;
+            color: #666;
+            font-size: 0.9rem;
+            text-align: center;
+            line-height: 1.5;
+        }
+        #start-btn {
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            background: transparent;
+            color: #fff;
+            border: 2px solid #555;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.3s;
+            border-radius: 4px;
+        }
+        #start-btn:hover {
+            background: #fff;
+            color: #000;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            display: none;
+            z-index: 5;
+        }
+        #death-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #7a0000;
+            color: #000;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            font-size: 5rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            text-shadow: 2px 2px 0px rgba(255,0,0,0.5);
+        }
+        #restart-btn {
+            margin-top: 40px;
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            background: #000;
+            color: #f00;
+            border: 3px solid #f00;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            font-weight: bold;
+            transition: all 0.3s;
+            border-radius: 5px;
+        }
+        #restart-btn:hover {
+            background: #f00;
+            color: #000;
+            box-shadow: 0 0 30px rgba(255,0,0,0.8);
+        }
+        #camera-ui {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 6;
+        }
+        .cam-corner { position: absolute; width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.7); }
+        .cam-top-left { top: 25%; left: 25%; border-right: none; border-bottom: none; }
+        .cam-top-right { top: 25%; right: 25%; border-left: none; border-bottom: none; }
+        .cam-bottom-left { bottom: 25%; left: 25%; border-right: none; border-top: none; }
+        .cam-bottom-right { bottom: 25%; right: 25%; border-left: none; border-top: none; }
+        .cam-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 8px; height: 8px; border: 1px solid rgba(255,255,255,0.6); border-radius: 50%; }
+        
+        #flash-overlay {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #ffffff; z-index: 30; opacity: 1; pointer-events: none;
+        }
+        #photo-score-popup {
+            position: absolute; top: 60%; left: 50%; transform: translate(-50%, -50%); font-size: 3rem; font-weight: bold; text-shadow: 0 0 10px #000; opacity: 0; transition: opacity 1.5s; z-index: 7;
+        }
+        #total-score-display {
+            position: absolute; top: 20px; right: 30px; color: rgba(255,255,255,0.8); font-size: 1.5rem; z-index: 5; display: none; text-shadow: 0 0 5px #000; letter-spacing: 2px;
+        }
+        #lantern-display {
+            position: absolute; top: 20px; left: 30px; color: #ffaa00; font-size: 1.5rem; z-index: 5; display: none; text-shadow: 0 0 5px #000; letter-spacing: 2px; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <h1>THE INFINITE WOODS</h1>
+        <p>Organic Textures & Cryptid Logic</p>
+        <button id="start-btn">Click to Enter</button>
+        <div class="controls">
+            [ W A S D ] to Walk<br>
+            [ Mouse ] to Look & Aim Flashlight<br>
+            [ C ] to Toggle Camera Mode<br>
+            [ P ] to Take Photograph<br>
+            [ L ] to Drop Lantern (5 total)
+        </div>
+    </div>
+
+    <div id="crosshair"></div>
+    <div id="game-container"></div>
+    
+    <div id="camera-ui">
+        <div class="cam-corner cam-top-left"></div>
+        <div class="cam-corner cam-top-right"></div>
+        <div class="cam-corner cam-bottom-left"></div>
+        <div class="cam-corner cam-bottom-right"></div>
+        <div class="cam-center"></div>
+        <div id="photo-score-popup"></div>
+    </div>
+    <div id="total-score-display">SCORE: 0</div>
+    <div id="lantern-display">LANTERNS: 5</div>
+    <div id="flash-overlay"></div>
+
+    <div id="death-screen">
+        YOU WERE KILLED
+        <button id="restart-btn">Restart Game</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+
+    <script>
+        const CHUNK_SIZE = 60;
+        const RENDER_DISTANCE = 2; 
+        const TREES_PER_CHUNK = 45;
+        const BUSHES_PER_CHUNK = 50;
+        
+        let scene, camera, renderer, controls;
+        let flashlight, flashlightTarget;
+        let audioCtx, windGain;
+        let isPlaying = false;
+        
+        const player = {
+            height: 2.0,
+            radius: 0.75, 
+            speed: 4.5,
+            velocity: new THREE.Vector3(),
+            direction: new THREE.Vector3(),
+            bobTimer: 0
+        };
+
+        const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
+        const activeChunks = new Map();
+        let currentChunkCoords = { x: 0, z: 0 };
+        let particleSystem;
+        let notDeerTimer = 0;
+        let nextNotDeerThreshold = 180 + Math.random() * 120; // 3 to 5 minutes
+        let lockCooldown = false; 
+        let isDead = false;
+        
+        let isCameraMode = false;
+        let totalScore = 0;
+        let lanternsLeft = 5;
+        let placedLanterns = [];
+
+        function getTerrainHeight(x, z) {
+            return Math.sin(x * 0.15) * Math.cos(z * 0.15) * 0.9;
+        }
+
+        function createOrganicTexture(width, height, type = 'bark') {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            
+            if (type === 'bark') {
+                ctx.fillStyle = '#2a221b';
+                ctx.fillRect(0, 0, width, height);
+                for (let i = 0; i < 3000; i++) {
+                    const x = Math.random() * width;
+                    const y = Math.random() * height;
+                    const w = 1 + Math.random() * 3;
+                    const h = 10 + Math.random() * 30;
+                    const brightness = Math.random() * 50 - 25;
+                    const r = 42 + brightness;
+                    const g = 34 + brightness;
+                    const b = 27 + brightness;
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    ctx.fillRect(x, y, w, h);
+                    if (x + w > width) ctx.fillRect(x - width, y, w, h);
+                    if (y + h > height) ctx.fillRect(x, y - height, w, h);
+                }
+                ctx.globalAlpha = 0.4;
+                for (let i = 0; i < 50; i++) {
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 1 + Math.random() * 2;
+                    const x = Math.random() * width;
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x + (Math.random() - 0.5) * 20, height);
+                    ctx.stroke();
+                }
+            } else if (type === 'dirt') {
+                ctx.fillStyle = '#121411';
+                ctx.fillRect(0, 0, width, height);
+                for (let i = 0; i < 4000; i++) {
+                    const x = Math.random() * width;
+                    const y = Math.random() * height;
+                    const size = 1 + Math.random() * 3;
+                    const val = Math.random() * 30;
+                    ctx.fillStyle = `rgb(${18+val}, ${20+val}, ${17+val})`;
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            } else if (type === 'leaf') {
+                ctx.fillStyle = '#0a140c';
+                ctx.fillRect(0, 0, width, height);
+                for (let i = 0; i < 2000; i++) {
+                    const x = Math.random() * width;
+                    const y = Math.random() * height;
+                    const size = 2 + Math.random() * 4;
+                    const val = Math.random() * 40;
+                    ctx.fillStyle = `rgb(${10+val}, ${20+val}, ${12+val})`;
+                    ctx.fillRect(x, y, size, size);
+                }
+            } else if (type === 'canopy') {
+                ctx.fillStyle = '#060a07';
+                ctx.fillRect(0, 0, width, height);
+                for (let i = 0; i < 3000; i++) {
+                    const x = Math.random() * width;
+                    const y = Math.random() * height;
+                    const w = 1 + Math.random() * 2;
+                    const h = 4 + Math.random() * 10;
+                    const val = Math.random() * 30;
+                    ctx.fillStyle = `rgb(${8+val}, ${18+val}, ${10+val})`;
+                    ctx.fillRect(x, y, w, h);
+                }
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            return texture;
+        }
+
+        const barkTexture = createOrganicTexture(512, 512, 'bark');
+        const dirtTexture = createOrganicTexture(512, 512, 'dirt');
+        const bushTexture = createOrganicTexture(256, 256, 'leaf');
+        const canopyTexture = createOrganicTexture(256, 256, 'canopy');
+
+        function mulberry32(a) {
+            return function() {
+              var t = a += 0x6D2B79F5;
+              t = Math.imul(t ^ t >>> 15, t | 1);
+              t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+              return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            }
+        }
+
+        function init() {
+            const container = document.getElementById('game-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x010102);
+            scene.fog = new THREE.FogExp2(0x010102, 0.048);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 150);
+            camera.position.y = player.height;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.HemisphereLight(0x0a0a1a, 0x020202, 0.08);
+            scene.add(ambientLight);
+
+            flashlight = new THREE.SpotLight(0xffcc77, 24); 
+            flashlight.position.set(0, 0, 0);
+            flashlight.angle = (Math.PI / 7) * 1.2; 
+            flashlight.penumbra = 0.6;
+            flashlight.decay = 2.1;
+            flashlight.distance = 100;
+            flashlight.castShadow = true;
+            flashlight.shadow.mapSize.width = 1024;
+            flashlight.shadow.mapSize.height = 1024;
+            scene.add(flashlight);
+
+            flashlightTarget = new THREE.Object3D();
+            scene.add(flashlightTarget);
+            flashlight.target = flashlightTarget;
+
+            controls = new THREE.PointerLockControls(camera, document.body);
+            
+            const startBtn = document.getElementById('start-btn');
+            startBtn.addEventListener('click', () => {
+                if (lockCooldown) return;
+                try {
+                    controls.lock();
+                } catch(e) {
+                    console.error("Pointer lock exception:", e);
+                }
+            });
+
+            controls.addEventListener('lock', () => {
+                document.getElementById('ui-layer').style.opacity = '0';
+                setTimeout(() => document.getElementById('ui-layer').style.display = 'none', 500);
+                if(!isCameraMode) document.getElementById('crosshair').style.display = 'block';
+                document.getElementById('lantern-display').style.display = 'block';
+                if (!isPlaying) { initAudio(); isPlaying = true; }
+                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            });
+
+            controls.addEventListener('unlock', () => {
+                if (isDead) return; // Prevent the menu from showing if player is dead
+                document.getElementById('ui-layer').style.display = 'flex';
+                void document.getElementById('ui-layer').offsetWidth;
+                document.getElementById('ui-layer').style.opacity = '1';
+                
+                if(!isCameraMode) document.getElementById('crosshair').style.display = 'none';
+                document.getElementById('lantern-display').style.display = 'none';
+                
+                lockCooldown = true;
+                startBtn.textContent = 'Wait...';
+                startBtn.style.opacity = '0.5';
+                startBtn.style.cursor = 'default';
+                
+                setTimeout(() => {
+                    lockCooldown = false;
+                    startBtn.textContent = 'Click to Enter';
+                    startBtn.style.opacity = '1';
+                    startBtn.style.cursor = 'pointer';
+                }, 1500);
+            });
+            
+            document.addEventListener('pointerlockerror', () => {
+                startBtn.textContent = 'Pointer Lock Failed (Retry)';
+                lockCooldown = false;
+                startBtn.style.opacity = '1';
+                startBtn.style.cursor = 'pointer';
+            });
+
+            document.getElementById('restart-btn').addEventListener('click', restartGame);
+
+            document.addEventListener('keydown', (e) => { 
+                if(keys.hasOwnProperty(e.code)) keys[e.code] = true; 
+                if(e.code === 'KeyC' && controls.isLocked && !isDead) {
+                    isCameraMode = !isCameraMode;
+                    document.getElementById('camera-ui').style.display = isCameraMode ? 'block' : 'none';
+                    document.getElementById('total-score-display').style.display = isCameraMode ? 'block' : 'none';
+                    document.getElementById('crosshair').style.display = isCameraMode ? 'none' : 'block';
+                }
+                if(e.code === 'KeyP' && isCameraMode && controls.isLocked && !isDead) {
+                    takePhoto();
+                }
+                if(e.code === 'KeyL' && controls.isLocked && !isDead) {
+                    dropLantern();
+                }
+            });
+            document.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.code)) keys[e.code] = false; });
+            window.addEventListener('resize', onWindowResize);
+
+            updateChunks();
+            animate();
+        }
+
+        function restartGame() {
+            isDead = false;
+            document.getElementById('death-screen').style.display = 'none';
+            
+            // Reset player state
+            player.velocity.set(0,0,0);
+            camera.position.set(0, player.height, 0);
+            controls.getObject().position.set(0, player.height, 0);
+            
+            // Reset timers & score
+            notDeerTimer = 0;
+            totalScore = 0;
+            updateScoreDisplay();
+
+            // Reset lanterns
+            lanternsLeft = 5;
+            updateLanternDisplay();
+            placedLanterns.forEach(l => {
+                scene.remove(l);
+                l.traverse(c => { 
+                    if(c.geometry) c.geometry.dispose(); 
+                    if(c.material) c.material.dispose(); 
+                });
+            });
+            placedLanterns = [];
+            
+            // Clear all chunks to prevent instant death spawn loop
+            for (const [id, chunkData] of activeChunks.entries()) {
+                scene.remove(chunkData.group);
+                chunkData.group.traverse(c => { if(c.geometry) c.geometry.dispose(); });
+            }
+            activeChunks.clear();
+            currentChunkCoords = { x: 99999, z: 99999 }; // Force rebuild
+            
+            updateChunks();
+            
+            // Re-lock mouse
+            setTimeout(() => { controls.lock(); }, 100);
+        }
+
+        function playShutterSound() {
+            if (!audioCtx || audioCtx.state === 'suspended') return;
+            const t = audioCtx.currentTime;
+            
+            // Noise burst for mechanical click
+            const bufferSize = audioCtx.sampleRate * 0.05; 
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            const bandpass = audioCtx.createBiquadFilter();
+            bandpass.type = 'bandpass';
+            bandpass.frequency.value = 1500;
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(1, t);
+            gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+            
+            noise.connect(bandpass);
+            bandpass.connect(gain);
+            gain.connect(audioCtx.destination);
+            noise.start(t);
+            noise.stop(t + 0.05);
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('total-score-display').innerText = `SCORE: ${totalScore}`;
+        }
+
+        function updateLanternDisplay() {
+            document.getElementById('lantern-display').innerText = `LANTERNS: ${lanternsLeft}`;
+        }
+
+        function dropLantern() {
+            if (lanternsLeft <= 0) return;
+            lanternsLeft--;
+            updateLanternDisplay();
+
+            const lanternGroup = new THREE.Group();
+            
+            const baseGeo = new THREE.CylinderGeometry(0.1, 0.15, 0.3, 8);
+            const baseMat = new THREE.MeshStandardMaterial({color: 0x222222, roughness: 0.8});
+            const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+            baseMesh.position.y = 0.15;
+            baseMesh.castShadow = true;
+            lanternGroup.add(baseMesh);
+
+            const glowGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.15, 8);
+            const glowMat = new THREE.MeshBasicMaterial({color: 0xffaa00});
+            const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+            glowMesh.position.y = 0.15;
+            lanternGroup.add(glowMesh);
+
+            const light = new THREE.PointLight(0xffaa00, 15, 45); // Warm ambient light
+            light.position.y = 0.2;
+            light.castShadow = true;
+            light.shadow.mapSize.width = 512;
+            light.shadow.mapSize.height = 512;
+            lanternGroup.add(light);
+
+            const camPos = new THREE.Vector3();
+            camera.getWorldPosition(camPos);
+            
+            // Push slightly forward so it drops directly in front of the player
+            const camDir = new THREE.Vector3();
+            camera.getWorldDirection(camDir);
+            camDir.y = 0;
+            camDir.normalize();
+            
+            const dropPos = camPos.clone().add(camDir.multiplyScalar(1.5));
+            const terrainY = getTerrainHeight(dropPos.x, dropPos.z);
+            
+            lanternGroup.position.set(dropPos.x, terrainY, dropPos.z);
+            
+            scene.add(lanternGroup);
+            placedLanterns.push(lanternGroup);
+        }
+
+        function takePhoto() {
+            playShutterSound();
+
+            const flash = document.getElementById('flash-overlay');
+            flash.style.display = 'block';
+            flash.style.opacity = '1';
+            
+            let opacity = 1;
+            const fade = setInterval(() => {
+                opacity -= 0.08;
+                flash.style.opacity = opacity;
+                if(opacity <= 0) {
+                    clearInterval(fade);
+                    flash.style.display = 'none';
+                }
+            }, 16);
+
+            camera.updateMatrixWorld();
+            const frustum = new THREE.Frustum();
+            const projScreenMatrix = new THREE.Matrix4();
+            projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            frustum.setFromProjectionMatrix(projScreenMatrix);
+
+            let bestScore = 0;
+            let capturedType = '';
+
+            for (const [id, chunk] of activeChunks.entries()) {
+                if (chunk.animals) {
+                    for (const animal of chunk.animals) {
+                        const worldPos = new THREE.Vector3();
+                        animal.getWorldPosition(worldPos);
+
+                        if (frustum.containsPoint(worldPos)) {
+                            const screenPos = worldPos.clone().project(camera);
+                            
+                            // Check if inside the 50% center box (|x| < 0.5 and |y| < 0.5)
+                            if (Math.abs(screenPos.x) < 0.5 && Math.abs(screenPos.y) < 0.5) {
+                                const dist = camera.position.distanceTo(worldPos);
+                                if (dist < 45) { // Photo range limit
+                                    let score = 0;
+                                    if (animal.userData.type === 'not_deer') {
+                                        // 250 - 400 pts (closer = higher)
+                                        const t = Math.max(0, Math.min(1, (45 - dist) / 40));
+                                        score = Math.floor(250 + (t * 150));
+                                    } else {
+                                        // 5 - 25 pts
+                                        const t = Math.max(0, Math.min(1, (45 - dist) / 40));
+                                        score = Math.floor(5 + (t * 20));
+                                    }
+
+                                    if (score > bestScore) {
+                                        bestScore = score;
+                                        capturedType = animal.userData.type;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (bestScore > 0) {
+                totalScore += bestScore;
+                updateScoreDisplay();
+                const scorePopup = document.getElementById('photo-score-popup');
+                scorePopup.innerText = `+${bestScore}`;
+                scorePopup.style.color = capturedType === 'not_deer' ? '#ff3333' : '#33ff33';
+                scorePopup.style.opacity = '1';
+                
+                setTimeout(() => { scorePopup.style.opacity = '0'; }, 1500);
+            }
+        }
+
+        const trunkMat = new THREE.MeshStandardMaterial({ 
+            color: 0x443328, 
+            roughness: 1.0, 
+            map: barkTexture,
+            bumpMap: barkTexture,
+            bumpScale: 0.12 
+        });
+        const leafMat = new THREE.MeshStandardMaterial({ 
+            color: 0x08120a, 
+            roughness: 0.9,
+            map: canopyTexture,
+            bumpMap: canopyTexture,
+            bumpScale: 0.08
+        });
+        const bushMat = new THREE.MeshStandardMaterial({ 
+            color: 0x0a140c, 
+            roughness: 1.0,
+            map: bushTexture 
+        });
+        const groundMat = new THREE.MeshStandardMaterial({ 
+            color: 0x121411, 
+            roughness: 1.0,
+            map: dirtTexture,
+            bumpMap: dirtTexture,
+            bumpScale: 0.04
+        });
+
+        function createAnimal() {
+            const group = new THREE.Group();
+            group.userData = { state: 'idle', runTimer: 0 };
+            
+            const furMat = new THREE.MeshStandardMaterial({color: 0x050505, roughness: 1.0});
+            
+            const bodyGroup = new THREE.Group();
+            group.add(bodyGroup);
+            group.body = bodyGroup;
+            
+            const torsoGeo = new THREE.BoxGeometry(0.6, 0.6, 1.4);
+            const torso = new THREE.Mesh(torsoGeo, furMat);
+            torso.position.y = 0.6;
+            torso.castShadow = true;
+            bodyGroup.add(torso);
+            
+            // Fixed front orientation: +Z is forward
+            const headGroup = new THREE.Group();
+            headGroup.position.set(0, 0.9, 0.7);
+            
+            const headGeo = new THREE.BoxGeometry(0.35, 0.4, 0.5);
+            const head = new THREE.Mesh(headGeo, furMat);
+            head.castShadow = true;
+            headGroup.add(head);
+            
+            const earGeo = new THREE.ConeGeometry(0.08, 0.25, 4);
+            const earL = new THREE.Mesh(earGeo, furMat);
+            earL.position.set(-0.15, 0.3, -0.1);
+            const earR = new THREE.Mesh(earGeo, furMat);
+            earR.position.set(0.15, 0.3, -0.1);
+            headGroup.add(earL, earR);
+            
+            const eyeGeo = new THREE.SphereGeometry(0.05, 8, 8);
+            const eyeMat = new THREE.MeshBasicMaterial({color: 0xccff00});
+            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeL.position.set(-0.12, 0.05, 0.26); // +Z faces player
+            const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeR.position.set(0.12, 0.05, 0.26);  // +Z faces player
+            headGroup.add(eyeL, eyeR);
+            
+            bodyGroup.add(headGroup);
+            group.head = headGroup; 
+            
+            const legGeo = new THREE.CylinderGeometry(0.06, 0.04, 0.8);
+            legGeo.translate(0, -0.4, 0); 
+            const legPositions = [
+                [-0.2, 0.8, 0.5], [0.2, 0.8, 0.5], 
+                [-0.2, 0.8, -0.5], [0.2, 0.8, -0.5] 
+            ];
+            legPositions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeo, furMat);
+                leg.position.set(...pos);
+                leg.castShadow = true;
+                bodyGroup.add(leg);
+            });
+            
+            return group;
+        }
+
+        function createNotDeer() {
+            const group = new THREE.Group();
+            group.userData = { state: 'idle', type: 'not_deer', scaleY: 1.0 };
+            
+            const furMat = new THREE.MeshStandardMaterial({color: 0x020202, roughness: 1.0}); 
+            
+            const bodyGroup = new THREE.Group();
+            group.add(bodyGroup);
+            group.body = bodyGroup;
+            
+            const torsoGeo = new THREE.BoxGeometry(0.4, 1.8, 0.3);
+            const torso = new THREE.Mesh(torsoGeo, furMat);
+            torso.position.y = 1.4;
+            torso.castShadow = true;
+            bodyGroup.add(torso);
+            
+            // Fixed front orientation: +Z is forward
+            const headGroup = new THREE.Group();
+            headGroup.position.set(0, 2.4, 0.2); 
+            
+            const headGeo = new THREE.BoxGeometry(0.3, 0.4, 0.5); 
+            const head = new THREE.Mesh(headGeo, furMat);
+            head.castShadow = true;
+            headGroup.add(head);
+            
+            const antlerGeo = new THREE.CylinderGeometry(0.02, 0.04, 0.6);
+            const antlerL = new THREE.Mesh(antlerGeo, furMat);
+            antlerL.position.set(-0.15, 0.4, -0.1);
+            antlerL.rotation.z = 0.3;
+            const antlerR = new THREE.Mesh(antlerGeo, furMat);
+            antlerR.position.set(0.15, 0.4, -0.1);
+            antlerR.rotation.z = -0.3;
+            headGroup.add(antlerL, antlerR);
+            
+            const eyeGeo = new THREE.SphereGeometry(0.04, 8, 8);
+            const eyeMat = new THREE.MeshBasicMaterial({color: 0xff0000}); 
+            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeL.position.set(-0.1, 0.1, 0.26); // +Z faces player
+            const eyeR = new THREE.Mesh(eyeGeo, eyeMat); 
+            eyeR.position.set(0.1, 0.1, 0.26);  // +Z faces player
+            headGroup.add(eyeL, eyeR);
+            
+            bodyGroup.add(headGroup);
+            group.head = headGroup;
+            
+            const legGeo = new THREE.CylinderGeometry(0.05, 0.03, 1.0);
+            legGeo.translate(0, -0.5, 0);
+            
+            const createReverseLeg = (x) => {
+                const leg = new THREE.Group();
+                leg.position.set(x, 0.8, 0);
+                const thigh = new THREE.Mesh(legGeo, furMat);
+                thigh.rotation.x = -0.4; // Pitches forward
+                const calf = new THREE.Mesh(legGeo, furMat);
+                calf.position.set(0, -0.9, 0.35); // Knee forward
+                calf.rotation.x = 0.4; // Reverse joint bend backward
+                leg.add(thigh);
+                leg.add(calf);
+                return leg;
+            };
+            
+            bodyGroup.add(createReverseLeg(-0.15));
+            bodyGroup.add(createReverseLeg(0.15));
+            
+            const armGeo = new THREE.CylinderGeometry(0.03, 0.015, 1.6);
+            armGeo.translate(0, -0.8, 0);
+            const armL = new THREE.Mesh(armGeo, furMat);
+            armL.position.set(-0.25, 2.2, 0);
+            armL.rotation.z = 0.1;
+            const armR = new THREE.Mesh(armGeo, furMat);
+            armR.position.set(0.25, 2.2, 0);
+            armR.rotation.z = -0.1;
+            bodyGroup.add(armL, armR);
+
+            return group;
+        }
+
+        function createChunk(cx, cz) {
+            const chunkGroup = new THREE.Group();
+            const chunkWorldX = cx * CHUNK_SIZE;
+            const chunkWorldZ = cz * CHUNK_SIZE;
+            chunkGroup.position.set(chunkWorldX, 0, chunkWorldZ);
+
+            const seed = (cx * 2341) + cz + 8888;
+            const random = mulberry32(seed);
+            const colliders = []; 
+            const chunkAnimals = [];
+
+            const groundGeom = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, 10, 10);
+            groundGeom.rotateX(-Math.PI / 2);
+            const pos = groundGeom.attributes.position.array;
+            for (let i = 0; i < pos.length; i += 3) {
+                const vx = pos[i] + chunkWorldX;
+                const vz = pos[i + 2] + chunkWorldZ;
+                pos[i+1] = getTerrainHeight(vx, vz);
+            }
+            groundGeom.computeVertexNormals();
+            const groundMesh = new THREE.Mesh(groundGeom, groundMat);
+            groundMesh.receiveShadow = true;
+            chunkGroup.add(groundMesh);
+
+            const trunkMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.7, 1, 7).translate(0,0.5,0), trunkMat, TREES_PER_CHUNK);
+            const leafMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(2, 1, 6).translate(0,0.5,0), leafMat, TREES_PER_CHUNK);
+            trunkMesh.castShadow = true;
+            trunkMesh.receiveShadow = true;
+
+            const dummy = new THREE.Object3D();
+
+            for (let i = 0; i < TREES_PER_CHUNK; i++) {
+                const lx = (random() - 0.5) * (CHUNK_SIZE - 6);
+                const lz = (random() - 0.5) * (CHUNK_SIZE - 6);
+                const bh = getTerrainHeight(lx + chunkWorldX, lz + chunkWorldZ) - 0.2;
+                const thickness = 0.5 + random() * 1.3;
+                const height = 14 + random() * 16;
+
+                dummy.position.set(lx, bh, lz);
+                dummy.scale.set(thickness, height, thickness);
+                dummy.rotation.y = random() * Math.PI;
+                dummy.updateMatrix();
+                trunkMesh.setMatrixAt(i, dummy.matrix);
+
+                const lScale = thickness * (1.6 + random() * 1.2);
+                dummy.position.set(lx, bh + height * 0.45, lz);
+                dummy.scale.set(lScale, height * 0.75, lScale);
+                dummy.updateMatrix();
+                leafMesh.setMatrixAt(i, dummy.matrix);
+
+                colliders.push({ x: lx + chunkWorldX, z: lz + chunkWorldZ, r: thickness * 0.7 });
+            }
+            chunkGroup.add(trunkMesh, leafMesh);
+
+            const bushIM = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 1), bushMat, BUSHES_PER_CHUNK);
+            bushIM.castShadow = true;
+            for(let i=0; i<BUSHES_PER_CHUNK; i++) {
+                const lx = (random() - 0.5) * (CHUNK_SIZE - 3);
+                const lz = (random() - 0.5) * (CHUNK_SIZE - 3);
+                const bh = getTerrainHeight(lx + chunkWorldX, lz + chunkWorldZ);
+                const scale = 0.8 + random() * 2.0;
+
+                dummy.position.set(lx, bh + scale * 0.2, lz);
+                dummy.scale.set(scale, scale * 0.8, scale);
+                dummy.rotation.set(random(), random(), 0);
+                dummy.updateMatrix();
+                bushIM.setMatrixAt(i, dummy.matrix);
+
+                if (scale > 1.6) {
+                    colliders.push({ x: lx + chunkWorldX, z: lz + chunkWorldZ, r: scale * 0.6 });
+                }
+            }
+            chunkGroup.add(bushIM);
+
+            const numAnimals = Math.floor(random() * 3) + 3;
+            for (let a = 0; a < numAnimals; a++) {
+                const animal = createAnimal();
+                animal.userData.isRunner = random() > 0.75; 
+                
+                const lx = (random() - 0.5) * (CHUNK_SIZE - 10);
+                const lz = (random() - 0.5) * (CHUNK_SIZE - 10);
+                const worldX = lx + chunkWorldX;
+                const worldZ = lz + chunkWorldZ;
+                const bh = getTerrainHeight(worldX, worldZ);
+                
+                // Set local coordinate correctly
+                animal.position.set(lx, bh, lz); 
+                animal.rotation.y = random() * Math.PI * 2;
+                
+                chunkGroup.add(animal);
+                colliders.push({ x: worldX, z: worldZ, r: 0.8 });
+                chunkAnimals.push(animal);
+            }
+
+            if (notDeerTimer > nextNotDeerThreshold) {
+                notDeerTimer = 0; 
+                nextNotDeerThreshold = 180 + Math.random() * 120; 
+
+                const notDeer = createNotDeer();
+                const lx = (random() - 0.5) * (CHUNK_SIZE - 10);
+                const lz = (random() - 0.5) * (CHUNK_SIZE - 10);
+                const worldX = lx + chunkWorldX;
+                const worldZ = lz + chunkWorldZ;
+                const bh = getTerrainHeight(worldX, worldZ);
+                
+                // Set local coordinate correctly
+                notDeer.position.set(lx, bh, lz);
+                notDeer.rotation.y = random() * Math.PI * 2;
+                
+                chunkGroup.add(notDeer);
+                colliders.push({ x: worldX, z: worldZ, r: 1.0 });
+                chunkAnimals.push(notDeer);
+            }
+
+            scene.add(chunkGroup);
+            return { group: chunkGroup, colliders: colliders, animals: chunkAnimals };
+        }
+
+        function updateChunks() {
+            const pX = camera.position.x;
+            const pZ = camera.position.z;
+            const cx = Math.floor((pX + CHUNK_SIZE / 2) / CHUNK_SIZE);
+            const cz = Math.floor((pZ + CHUNK_SIZE / 2) / CHUNK_SIZE);
+
+            if (cx !== currentChunkCoords.x || cz !== currentChunkCoords.z || activeChunks.size === 0) {
+                currentChunkCoords.x = cx;
+                currentChunkCoords.z = cz;
+                const newActiveKeys = new Set();
+
+                for (let x = cx - RENDER_DISTANCE; x <= cx + RENDER_DISTANCE; x++) {
+                    for (let z = cz - RENDER_DISTANCE; z <= cz + RENDER_DISTANCE; z++) {
+                        const id = `${x},${z}`;
+                        newActiveKeys.add(id);
+                        if (!activeChunks.has(id)) activeChunks.set(id, createChunk(x, z));
+                    }
+                }
+
+                for (const [id, chunkData] of activeChunks.entries()) {
+                    if (!newActiveKeys.has(id)) {
+                        scene.remove(chunkData.group);
+                        chunkData.group.traverse(c => { if(c.geometry) c.geometry.dispose(); });
+                        activeChunks.delete(id);
+                    }
+                }
+            }
+        }
+
+        function resolveCollisions() {
+            const pPos = camera.position;
+            const r = player.radius;
+            const cx = currentChunkCoords.x;
+            const cz = currentChunkCoords.z;
+
+            for (let x = cx - 1; x <= cx + 1; x++) {
+                for (let z = cz - 1; z <= cz + 1; z++) {
+                    const chunk = activeChunks.get(`${x},${z}`);
+                    if (!chunk) continue;
+                    for (const c of chunk.colliders) {
+                        const dx = pPos.x - c.x;
+                        const dz = pPos.z - c.z;
+                        const distSq = dx * dx + dz * dz;
+                        const minDist = r + c.r;
+                        if (distSq < minDist * minDist) {
+                            const dist = Math.sqrt(distSq);
+                            const overlap = minDist - dist;
+                            camera.position.x += (dx / dist) * overlap;
+                            camera.position.z += (dz / dist) * overlap;
+                        }
+                    }
+                }
+            }
+        }
+
+        function initAudio() {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AC();
+            const bufferSize = audioCtx.sampleRate * 2;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer; noise.loop = true;
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass'; filter.frequency.value = 280;
+            windGain = audioCtx.createGain(); windGain.gain.value = 0.1;
+            noise.connect(filter); filter.connect(windGain); windGain.connect(audioCtx.destination);
+            noise.start();
+        }
+
+        let prevTime = performance.now();
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+            
+            notDeerTimer += delta;
+
+            if (controls.isLocked) {
+                player.velocity.x -= player.velocity.x * 10.0 * delta;
+                player.velocity.z -= player.velocity.z * 10.0 * delta;
+                player.direction.z = Number(keys.KeyW) - Number(keys.KeyS);
+                player.direction.x = Number(keys.KeyD) - Number(keys.KeyA);
+                player.direction.normalize();
+
+                if (keys.KeyW || keys.KeyS) player.velocity.z -= player.direction.z * 48.0 * delta;
+                if (keys.KeyA || keys.KeyD) player.velocity.x -= player.direction.x * 48.0 * delta;
+
+                controls.moveRight(-player.velocity.x * delta);
+                controls.moveForward(-player.velocity.z * delta);
+
+                resolveCollisions();
+
+                const vx = camera.position.x;
+                const vz = camera.position.z;
+                const terrainY = getTerrainHeight(vx, vz);
+                
+                const speed = Math.sqrt(player.velocity.x**2 + player.velocity.z**2);
+                if (speed > 0.1) {
+                    player.bobTimer += delta * 10;
+                    camera.position.y = player.height + terrainY + Math.sin(player.bobTimer) * 0.08;
+                } else {
+                    camera.position.y += (player.height + terrainY - camera.position.y) * 0.1;
+                }
+
+                const camPos = new THREE.Vector3();
+                camera.getWorldPosition(camPos);
+                const offset = new THREE.Vector3(0.35, -0.4, -0.2);
+                offset.applyQuaternion(camera.quaternion);
+                flashlight.position.lerp(camPos.clone().add(offset), 0.8);
+                
+                const camDir = new THREE.Vector3();
+                camera.getWorldDirection(camDir);
+                flashlightTarget.position.lerp(camPos.clone().add(camDir.multiplyScalar(30)), 0.8);
+                
+                for (const [id, chunk] of activeChunks.entries()) {
+                    if (chunk.animals) {
+                        for (const animal of chunk.animals) {
+                            
+                            // Always measure absolute distance to avoid double-offset logic bugs
+                            const worldPos = new THREE.Vector3();
+                            animal.getWorldPosition(worldPos);
+                            const dist = worldPos.distanceTo(camera.position);
+                            
+                            if (animal.userData.type === 'not_deer') {
+                                if (dist < 60 && animal.userData.state !== 'attack') {
+                                    const currentQuat = animal.head.quaternion.clone();
+                                    animal.head.lookAt(camera.position);
+                                    const targetQuat = animal.head.quaternion.clone();
+                                    animal.head.quaternion.copy(currentQuat);
+                                    animal.head.quaternion.slerp(targetQuat, 6 * delta);
+                                }
+                                
+                                if (dist < 25 && animal.userData.state === 'idle') {
+                                    animal.userData.state = 'intimidate';
+                                    animal.userData.lurchTimer = 0;
+                                }
+
+                                if (dist < 12 && animal.userData.state === 'intimidate') {
+                                    animal.userData.state = 'attack';
+                                }
+                                
+                                if (animal.userData.state === 'intimidate') {
+                                    animal.userData.scaleY = Math.min(animal.userData.scaleY + delta * 0.15, 1.5);
+                                    
+                                    // Lurching effect as it grows
+                                    animal.userData.lurchTimer += delta * 15;
+                                    let lurch = 0;
+                                    if (animal.userData.scaleY < 1.5) {
+                                        lurch = Math.sin(animal.userData.lurchTimer) * 0.08;
+                                    }
+                                    animal.scale.y = animal.userData.scaleY + lurch;
+                                    
+                                    const currentBodyQuat = animal.quaternion.clone();
+                                    // Point the body explicitly at the player
+                                    animal.lookAt(camera.position.x, worldPos.y, camera.position.z);
+                                    const targetBodyQuat = animal.quaternion.clone();
+                                    animal.quaternion.copy(currentBodyQuat);
+                                    animal.quaternion.slerp(targetBodyQuat, 1.5 * delta);
+                                } else if (animal.userData.state === 'attack') {
+                                    // Extreme Aggression
+                                    animal.lookAt(camera.position.x, worldPos.y, camera.position.z);
+                                    animal.translateZ(24 * delta); // Sprint towards player
+                                    
+                                    animal.getWorldPosition(worldPos);
+                                    animal.position.y = getTerrainHeight(worldPos.x, worldPos.z);
+                                    
+                                    animal.userData.runTimer = (animal.userData.runTimer || 0) + delta * 40;
+                                    animal.body.position.y = Math.sin(animal.userData.runTimer) * 0.2;
+                                    
+                                    const legRotation = Math.sin(animal.userData.runTimer) * 0.6;
+                                    animal.body.children[2].rotation.x = legRotation; 
+                                    animal.body.children[3].rotation.x = -legRotation;
+                                    animal.body.children[4].rotation.x = -legRotation;
+                                    animal.body.children[5].rotation.x = legRotation;
+
+                                    if (dist < 3.0 && !isDead) {
+                                        isDead = true;
+                                        document.getElementById('death-screen').style.display = 'flex';
+                                        controls.unlock();
+                                    }
+                                }
+                            } else {
+                                if (animal.userData.state === 'idle') {
+                                    if (dist < 45) {
+                                        const currentQuat = animal.head.quaternion.clone();
+                                        animal.head.lookAt(camera.position);
+                                        const targetQuat = animal.head.quaternion.clone();
+                                        animal.head.quaternion.copy(currentQuat);
+                                        animal.head.quaternion.slerp(targetQuat, 5 * delta);
+                                    }
+                                    
+                                    const triggerDist = animal.userData.isRunner ? 35 : 18;
+                                    
+                                    if (dist < triggerDist) {
+                                        animal.userData.state = 'fleeing';
+                                        
+                                        if (animal.userData.isRunner) {
+                                            const crossDir = worldPos.clone().sub(camera.position);
+                                            crossDir.y = 0;
+                                            crossDir.normalize();
+                                            const angle = (Math.random() > 0.5 ? Math.PI/2 : -Math.PI/2) + (Math.random() - 0.5) * 0.4;
+                                            crossDir.applyAxisAngle(new THREE.Vector3(0,1,0), angle);
+                                            
+                                            const targetPos = worldPos.clone().add(crossDir);
+                                            animal.lookAt(targetPos);
+                                            animal.userData.speed = 13 + Math.random() * 3; 
+                                        } else {
+                                            const fleeDir = worldPos.clone().sub(camera.position);
+                                            fleeDir.y = 0;
+                                            fleeDir.normalize();
+                                            fleeDir.applyAxisAngle(new THREE.Vector3(0,1,0), (Math.random() - 0.5) * 1.0);
+                                            
+                                            const targetPos = worldPos.clone().add(fleeDir);
+                                            animal.lookAt(targetPos);
+                                            animal.userData.speed = 9;
+                                        }
+                                        
+                                        animal.head.rotation.set(0,0,0);
+                                    }
+                                } else if (animal.userData.state === 'fleeing') {
+                                    // +Z translation moves forward based on our corrected model geometry
+                                    animal.translateZ((animal.userData.speed || 9) * delta); 
+                                    
+                                    // Update height continuously as it runs over bumps
+                                    animal.getWorldPosition(worldPos);
+                                    animal.position.y = getTerrainHeight(worldPos.x, worldPos.z);
+                                    
+                                    animal.userData.runTimer += delta * 25;
+                                    animal.body.position.y = Math.sin(animal.userData.runTimer) * 0.15;
+                                    
+                                    const legRotation = Math.sin(animal.userData.runTimer) * 0.5;
+                                    animal.body.children[2].rotation.x = legRotation; 
+                                    animal.body.children[3].rotation.x = -legRotation;
+                                    animal.body.children[4].rotation.x = -legRotation;
+                                    animal.body.children[5].rotation.x = legRotation; 
+                                }
+                            }
+                        }
+                    }
+                }
+
+                updateChunks();
+            }
+
+            renderer.render(scene, camera);
+            prevTime = time;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
