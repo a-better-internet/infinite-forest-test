@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Infinite Night Forest - AI Fixes</title>
+    <title>Infinite Night Forest</title>
     <style>
         body {
             margin: 0;
@@ -137,23 +137,33 @@
         #lantern-display {
             position: absolute; top: 20px; left: 30px; color: #ffaa00; font-size: 1.5rem; z-index: 5; display: none; text-shadow: 0 0 5px #000; letter-spacing: 2px; font-weight: bold;
         }
+        #night-vision-overlay {
+            display: none;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(0deg, rgba(0, 255, 0, 0.04), rgba(0, 255, 0, 0.04) 2px, transparent 2px, transparent 4px);
+            pointer-events: none;
+            z-index: 4;
+            mix-blend-mode: screen;
+        }
     </style>
 </head>
 <body>
 
     <div id="ui-layer">
         <h1>THE INFINITE WOODS</h1>
-        <p>Organic Textures & Cryptid Logic</p>
+        <p>Expanded Memory & Night Vision</p>
         <button id="start-btn">Click to Enter</button>
         <div class="controls">
             [ W A S D ] to Walk<br>
             [ Mouse ] to Look & Aim Flashlight<br>
             [ C ] to Toggle Camera Mode<br>
             [ P ] to Take Photograph<br>
-            [ L ] to Drop Lantern (5 total)
+            [ L ] to Drop Lantern (5 total)<br>
+            [ N ] to Toggle Night Vision
         </div>
     </div>
 
+    <div id="night-vision-overlay"></div>
     <div id="crosshair"></div>
     <div id="game-container"></div>
     
@@ -179,11 +189,11 @@
 
     <script>
         const CHUNK_SIZE = 60;
-        const RENDER_DISTANCE = 2; 
+        const RENDER_DISTANCE = 3; // Expanded visual distance
         const TREES_PER_CHUNK = 45;
         const BUSHES_PER_CHUNK = 50;
         
-        let scene, camera, renderer, controls;
+        let scene, camera, renderer, controls, ambientLight;
         let flashlight, flashlightTarget;
         let audioCtx, windGain;
         let isPlaying = false;
@@ -199,14 +209,16 @@
 
         const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
         const activeChunks = new Map();
+        const chunkCache = new Map(); // Expands memory of generated chunks
+        
         let currentChunkCoords = { x: 0, z: 0 };
-        let particleSystem;
         let notDeerTimer = 0;
-        let nextNotDeerThreshold = 180 + Math.random() * 120; // 3 to 5 minutes
+        let nextNotDeerThreshold = 120 + Math.random() * 120; // 2 to 4 minutes
         let lockCooldown = false; 
         let isDead = false;
         
         let isCameraMode = false;
+        let isNightVision = false;
         let totalScore = 0;
         let lanternsLeft = 5;
         let placedLanterns = [];
@@ -323,7 +335,7 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             container.appendChild(renderer.domElement);
 
-            const ambientLight = new THREE.HemisphereLight(0x0a0a1a, 0x020202, 0.08);
+            ambientLight = new THREE.HemisphereLight(0x0a0a1a, 0x020202, 0.08);
             scene.add(ambientLight);
 
             flashlight = new THREE.SpotLight(0xffcc77, 24); 
@@ -346,11 +358,7 @@
             const startBtn = document.getElementById('start-btn');
             startBtn.addEventListener('click', () => {
                 if (lockCooldown) return;
-                try {
-                    controls.lock();
-                } catch(e) {
-                    console.error("Pointer lock exception:", e);
-                }
+                try { controls.lock(); } catch(e) {}
             });
 
             controls.addEventListener('lock', () => {
@@ -363,7 +371,7 @@
             });
 
             controls.addEventListener('unlock', () => {
-                if (isDead) return; // Prevent the menu from showing if player is dead
+                if (isDead) return; 
                 document.getElementById('ui-layer').style.display = 'flex';
                 void document.getElementById('ui-layer').offsetWidth;
                 document.getElementById('ui-layer').style.opacity = '1';
@@ -401,6 +409,9 @@
                     document.getElementById('total-score-display').style.display = isCameraMode ? 'block' : 'none';
                     document.getElementById('crosshair').style.display = isCameraMode ? 'none' : 'block';
                 }
+                if(e.code === 'KeyN' && controls.isLocked && !isDead) {
+                    toggleNightVision();
+                }
                 if(e.code === 'KeyP' && isCameraMode && controls.isLocked && !isDead) {
                     takePhoto();
                 }
@@ -415,21 +426,37 @@
             animate();
         }
 
+        function toggleNightVision() {
+            isNightVision = !isNightVision;
+            document.getElementById('night-vision-overlay').style.display = isNightVision ? 'block' : 'none';
+            if (isNightVision) {
+                scene.fog.color.setHex(0x114411);
+                scene.background.setHex(0x114411);
+                ambientLight.intensity = 1.2;
+                ambientLight.color.setHex(0x55ff55);
+                flashlight.intensity = 3; // Dim flashlight so night vision works cleanly
+            } else {
+                scene.fog.color.setHex(0x010102);
+                scene.background.setHex(0x010102);
+                ambientLight.intensity = 0.08;
+                ambientLight.color.setHex(0x0a0a1a);
+                flashlight.intensity = 24;
+            }
+        }
+
         function restartGame() {
             isDead = false;
             document.getElementById('death-screen').style.display = 'none';
             
-            // Reset player state
             player.velocity.set(0,0,0);
             camera.position.set(0, player.height, 0);
             controls.getObject().position.set(0, player.height, 0);
             
-            // Reset timers & score
             notDeerTimer = 0;
+            nextNotDeerThreshold = 120 + Math.random() * 120;
             totalScore = 0;
             updateScoreDisplay();
 
-            // Reset lanterns
             lanternsLeft = 5;
             updateLanternDisplay();
             placedLanterns.forEach(l => {
@@ -441,17 +468,21 @@
             });
             placedLanterns = [];
             
-            // Clear all chunks to prevent instant death spawn loop
             for (const [id, chunkData] of activeChunks.entries()) {
                 scene.remove(chunkData.group);
                 chunkData.group.traverse(c => { if(c.geometry) c.geometry.dispose(); });
             }
             activeChunks.clear();
-            currentChunkCoords = { x: 99999, z: 99999 }; // Force rebuild
             
+            // Clear memory cache so you don't load old dead chunks
+            for (const [id, chunkData] of chunkCache.entries()) {
+                chunkData.group.traverse(c => { if(c.geometry) c.geometry.dispose(); });
+            }
+            chunkCache.clear();
+            
+            currentChunkCoords = { x: 99999, z: 99999 };
             updateChunks();
             
-            // Re-lock mouse
             setTimeout(() => { controls.lock(); }, 100);
         }
 
@@ -459,7 +490,6 @@
             if (!audioCtx || audioCtx.state === 'suspended') return;
             const t = audioCtx.currentTime;
             
-            // Noise burst for mechanical click
             const bufferSize = audioCtx.sampleRate * 0.05; 
             const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
             const data = buffer.getChannelData(0);
@@ -509,7 +539,7 @@
             glowMesh.position.y = 0.15;
             lanternGroup.add(glowMesh);
 
-            const light = new THREE.PointLight(0xffaa00, 15, 45); // Warm ambient light
+            const light = new THREE.PointLight(0xffaa00, 15, 45); 
             light.position.y = 0.2;
             light.castShadow = true;
             light.shadow.mapSize.width = 512;
@@ -519,7 +549,6 @@
             const camPos = new THREE.Vector3();
             camera.getWorldPosition(camPos);
             
-            // Push slightly forward so it drops directly in front of the player
             const camDir = new THREE.Vector3();
             camera.getWorldDirection(camDir);
             camDir.y = 0;
@@ -569,24 +598,53 @@
                         if (frustum.containsPoint(worldPos)) {
                             const screenPos = worldPos.clone().project(camera);
                             
-                            // Check if inside the 50% center box (|x| < 0.5 and |y| < 0.5)
+                            // Check if inside the camera bounds
                             if (Math.abs(screenPos.x) < 0.5 && Math.abs(screenPos.y) < 0.5) {
                                 const dist = camera.position.distanceTo(worldPos);
-                                if (dist < 45) { // Photo range limit
-                                    let score = 0;
-                                    if (animal.userData.type === 'not_deer') {
-                                        // 250 - 400 pts (closer = higher)
-                                        const t = Math.max(0, Math.min(1, (45 - dist) / 40));
-                                        score = Math.floor(250 + (t * 150));
-                                    } else {
-                                        // 5 - 25 pts
-                                        const t = Math.max(0, Math.min(1, (45 - dist) / 40));
-                                        score = Math.floor(5 + (t * 20));
+                                const maxDist = isNightVision ? 35 : 25; // Night vision helps see further
+                                
+                                if (dist < maxDist) {
+                                    // RAYCAST LINE-OF-SIGHT CHECK
+                                    const dir = worldPos.clone().sub(camera.position).normalize();
+                                    const raycaster = new THREE.Raycaster(camera.position, dir);
+                                    const intersects = raycaster.intersectObjects(scene.children, true);
+                                    let blocked = false;
+                                    
+                                    for (let inter of intersects) {
+                                        let obj = inter.object;
+                                        if (!obj.isMesh && !obj.isInstancedMesh) continue;
+                                        
+                                        let isAnimalHit = false;
+                                        let current = obj;
+                                        while(current) {
+                                            if(current === animal) { isAnimalHit = true; break; }
+                                            current = current.parent;
+                                        }
+                                        if (isAnimalHit) break; // Reached the animal clearly!
+                                        
+                                        // If it hit a tree/bush (InstancedMesh) or ground (Plane) first
+                                        if (obj.isInstancedMesh || obj.geometry.type === 'PlaneGeometry') {
+                                            if (inter.distance < dist - 0.5) {
+                                                blocked = true;
+                                                break;
+                                            }
+                                        }
                                     }
 
-                                    if (score > bestScore) {
-                                        bestScore = score;
-                                        capturedType = animal.userData.type;
+                                    if (!blocked) {
+                                        let score = 0;
+                                        if (animal.userData.type === 'not_deer') {
+                                            const t = Math.max(0, Math.min(1, (maxDist - dist) / (maxDist - 5)));
+                                            score = Math.floor(250 + (t * 150));
+                                        } else {
+                                            const t = Math.max(0, Math.min(1, (maxDist - dist) / (maxDist - 5)));
+                                            score = Math.floor(5 + (t * 20));
+                                        }
+
+                                        if (score > bestScore) {
+                                            bestScore = score;
+                                            capturedType = animal.userData.type;
+                                        }
                                     }
                                 }
                             }
@@ -634,10 +692,68 @@
             bumpScale: 0.04
         });
 
+        // Small skittish critter
+        function createCritter() {
+            const group = new THREE.Group();
+            group.userData = { state: 'idle', type: 'critter', runTimer: 0 };
+            const furMat = new THREE.MeshStandardMaterial({color: 0x111111, roughness: 1.0});
+
+            const bodyGroup = new THREE.Group();
+            group.add(bodyGroup);
+            group.body = bodyGroup;
+
+            const torsoGeo = new THREE.BoxGeometry(0.3, 0.3, 0.7);
+            const torso = new THREE.Mesh(torsoGeo, furMat);
+            torso.position.y = 0.3;
+            torso.castShadow = true;
+            bodyGroup.add(torso);
+
+            const headGroup = new THREE.Group();
+            headGroup.position.set(0, 0.5, -0.4); // -Z is forward
+
+            const headGeo = new THREE.BoxGeometry(0.2, 0.2, 0.3);
+            const head = new THREE.Mesh(headGeo, furMat);
+            head.castShadow = true;
+            headGroup.add(head);
+
+            const earGeo = new THREE.ConeGeometry(0.05, 0.15, 4);
+            const earL = new THREE.Mesh(earGeo, furMat);
+            earL.position.set(-0.1, 0.15, 0.05);
+            const earR = new THREE.Mesh(earGeo, furMat);
+            earR.position.set(0.1, 0.15, 0.05);
+            headGroup.add(earL, earR);
+
+            const eyeGeo = new THREE.SphereGeometry(0.03, 8, 8);
+            const eyeMat = new THREE.MeshBasicMaterial({color: 0xffaa00}); // Orange eyes
+            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeL.position.set(-0.06, 0.05, -0.14); 
+            const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeR.position.set(0.06, 0.05, -0.14); 
+            headGroup.add(eyeL, eyeR);
+
+            bodyGroup.add(headGroup);
+            group.head = headGroup;
+
+            const legGeo = new THREE.CylinderGeometry(0.03, 0.02, 0.4);
+            legGeo.translate(0, -0.2, 0);
+            const legPositions = [
+                [-0.1, 0.4, -0.25], [0.1, 0.4, -0.25],
+                [-0.1, 0.4, 0.25], [0.1, 0.4, 0.25]
+            ];
+            legPositions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeo, furMat);
+                leg.position.set(...pos);
+                leg.castShadow = true;
+                bodyGroup.add(leg);
+            });
+
+            return group;
+        }
+
+        // Standard animal (deer shape)
         function createAnimal() {
             const group = new THREE.Group();
-            group.userData = { state: 'idle', runTimer: 0 };
-            
+            group.userData = { state: 'idle', type: 'animal', runTimer: 0 };
             const furMat = new THREE.MeshStandardMaterial({color: 0x050505, roughness: 1.0});
             
             const bodyGroup = new THREE.Group();
@@ -650,9 +766,8 @@
             torso.castShadow = true;
             bodyGroup.add(torso);
             
-            // Fixed front orientation: +Z is forward
             const headGroup = new THREE.Group();
-            headGroup.position.set(0, 0.9, 0.7);
+            headGroup.position.set(0, 0.9, -0.7);
             
             const headGeo = new THREE.BoxGeometry(0.35, 0.4, 0.5);
             const head = new THREE.Mesh(headGeo, furMat);
@@ -661,17 +776,17 @@
             
             const earGeo = new THREE.ConeGeometry(0.08, 0.25, 4);
             const earL = new THREE.Mesh(earGeo, furMat);
-            earL.position.set(-0.15, 0.3, -0.1);
+            earL.position.set(-0.15, 0.3, 0.1);
             const earR = new THREE.Mesh(earGeo, furMat);
-            earR.position.set(0.15, 0.3, -0.1);
+            earR.position.set(0.15, 0.3, 0.1);
             headGroup.add(earL, earR);
             
             const eyeGeo = new THREE.SphereGeometry(0.05, 8, 8);
             const eyeMat = new THREE.MeshBasicMaterial({color: 0xccff00});
             const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeL.position.set(-0.12, 0.05, 0.26); // +Z faces player
+            eyeL.position.set(-0.12, 0.05, -0.26); 
             const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeR.position.set(0.12, 0.05, 0.26);  // +Z faces player
+            eyeR.position.set(0.12, 0.05, -0.26);  
             headGroup.add(eyeL, eyeR);
             
             bodyGroup.add(headGroup);
@@ -680,8 +795,8 @@
             const legGeo = new THREE.CylinderGeometry(0.06, 0.04, 0.8);
             legGeo.translate(0, -0.4, 0); 
             const legPositions = [
-                [-0.2, 0.8, 0.5], [0.2, 0.8, 0.5], 
-                [-0.2, 0.8, -0.5], [0.2, 0.8, -0.5] 
+                [-0.2, 0.8, -0.5], [0.2, 0.8, -0.5], 
+                [-0.2, 0.8, 0.5], [0.2, 0.8, 0.5] 
             ];
             legPositions.forEach(pos => {
                 const leg = new THREE.Mesh(legGeo, furMat);
@@ -696,7 +811,6 @@
         function createNotDeer() {
             const group = new THREE.Group();
             group.userData = { state: 'idle', type: 'not_deer', scaleY: 1.0 };
-            
             const furMat = new THREE.MeshStandardMaterial({color: 0x020202, roughness: 1.0}); 
             
             const bodyGroup = new THREE.Group();
@@ -709,9 +823,8 @@
             torso.castShadow = true;
             bodyGroup.add(torso);
             
-            // Fixed front orientation: +Z is forward
             const headGroup = new THREE.Group();
-            headGroup.position.set(0, 2.4, 0.2); 
+            headGroup.position.set(0, 2.4, -0.2); 
             
             const headGeo = new THREE.BoxGeometry(0.3, 0.4, 0.5); 
             const head = new THREE.Mesh(headGeo, furMat);
@@ -720,19 +833,19 @@
             
             const antlerGeo = new THREE.CylinderGeometry(0.02, 0.04, 0.6);
             const antlerL = new THREE.Mesh(antlerGeo, furMat);
-            antlerL.position.set(-0.15, 0.4, -0.1);
+            antlerL.position.set(-0.15, 0.4, 0.1);
             antlerL.rotation.z = 0.3;
             const antlerR = new THREE.Mesh(antlerGeo, furMat);
-            antlerR.position.set(0.15, 0.4, -0.1);
+            antlerR.position.set(0.15, 0.4, 0.1);
             antlerR.rotation.z = -0.3;
             headGroup.add(antlerL, antlerR);
             
             const eyeGeo = new THREE.SphereGeometry(0.04, 8, 8);
             const eyeMat = new THREE.MeshBasicMaterial({color: 0xff0000}); 
             const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeL.position.set(-0.1, 0.1, 0.26); // +Z faces player
+            eyeL.position.set(-0.1, 0.1, -0.26); 
             const eyeR = new THREE.Mesh(eyeGeo, eyeMat); 
-            eyeR.position.set(0.1, 0.1, 0.26);  // +Z faces player
+            eyeR.position.set(0.1, 0.1, -0.26);  
             headGroup.add(eyeL, eyeR);
             
             bodyGroup.add(headGroup);
@@ -745,10 +858,10 @@
                 const leg = new THREE.Group();
                 leg.position.set(x, 0.8, 0);
                 const thigh = new THREE.Mesh(legGeo, furMat);
-                thigh.rotation.x = -0.4; // Pitches forward
+                thigh.rotation.x = 0.4; 
                 const calf = new THREE.Mesh(legGeo, furMat);
-                calf.position.set(0, -0.9, 0.35); // Knee forward
-                calf.rotation.x = 0.4; // Reverse joint bend backward
+                calf.position.set(0, -0.9, 0.35); 
+                calf.rotation.x = -0.4; 
                 leg.add(thigh);
                 leg.add(calf);
                 return leg;
@@ -768,6 +881,47 @@
             bodyGroup.add(armL, armR);
 
             return group;
+        }
+
+        function spawnNotDeerNow() {
+            const camDir = new THREE.Vector3();
+            camera.getWorldDirection(camDir);
+            camDir.y = 0; camDir.normalize();
+            
+            // Offset angle slightly so it's not perfectly center
+            camDir.applyAxisAngle(new THREE.Vector3(0,1,0), (Math.random() - 0.5) * 0.8);
+            
+            const spawnDist = 35 + Math.random() * 10;
+            const worldX = camera.position.x + camDir.x * spawnDist;
+            const worldZ = camera.position.z + camDir.z * spawnDist;
+            
+            const cx = Math.floor((worldX + CHUNK_SIZE / 2) / CHUNK_SIZE);
+            const cz = Math.floor((worldZ + CHUNK_SIZE / 2) / CHUNK_SIZE);
+            const chunkId = `${cx},${cz}`;
+            
+            let chunk = activeChunks.get(chunkId);
+            if (!chunk && chunkCache.has(chunkId)) chunk = chunkCache.get(chunkId);
+            
+            // Fallback to player's chunk if distance bounds push it into unloaded territory
+            if (!chunk) {
+                 const pcx = Math.floor((camera.position.x + CHUNK_SIZE / 2) / CHUNK_SIZE);
+                 const pcz = Math.floor((camera.position.z + CHUNK_SIZE / 2) / CHUNK_SIZE);
+                 chunk = activeChunks.get(`${pcx},${pcz}`);
+            }
+            
+            if (chunk) {
+                const notDeer = createNotDeer();
+                const chunkX = chunk.group.position.x;
+                const chunkZ = chunk.group.position.z;
+                
+                notDeer.position.set(worldX - chunkX, getTerrainHeight(worldX, worldZ), worldZ - chunkZ);
+                notDeer.rotation.y = Math.random() * Math.PI * 2;
+                
+                chunk.group.add(notDeer);
+                chunk.colliders.push({ x: worldX, z: worldZ, r: 1.0 });
+                if (!chunk.animals) chunk.animals = [];
+                chunk.animals.push(notDeer);
+            }
         }
 
         function createChunk(cx, cz) {
@@ -844,10 +998,16 @@
             }
             chunkGroup.add(bushIM);
 
-            const numAnimals = Math.floor(random() * 3) + 3;
+            const numAnimals = Math.floor(random() * 3) + 2;
             for (let a = 0; a < numAnimals; a++) {
-                const animal = createAnimal();
-                animal.userData.isRunner = random() > 0.75; 
+                let animal;
+                if (random() > 0.6) {
+                    animal = createCritter();
+                    animal.userData.isRunner = true;
+                } else {
+                    animal = createAnimal();
+                    animal.userData.isRunner = random() > 0.75; 
+                }
                 
                 const lx = (random() - 0.5) * (CHUNK_SIZE - 10);
                 const lz = (random() - 0.5) * (CHUNK_SIZE - 10);
@@ -855,7 +1015,6 @@
                 const worldZ = lz + chunkWorldZ;
                 const bh = getTerrainHeight(worldX, worldZ);
                 
-                // Set local coordinate correctly
                 animal.position.set(lx, bh, lz); 
                 animal.rotation.y = random() * Math.PI * 2;
                 
@@ -864,27 +1023,6 @@
                 chunkAnimals.push(animal);
             }
 
-            if (notDeerTimer > nextNotDeerThreshold) {
-                notDeerTimer = 0; 
-                nextNotDeerThreshold = 180 + Math.random() * 120; 
-
-                const notDeer = createNotDeer();
-                const lx = (random() - 0.5) * (CHUNK_SIZE - 10);
-                const lz = (random() - 0.5) * (CHUNK_SIZE - 10);
-                const worldX = lx + chunkWorldX;
-                const worldZ = lz + chunkWorldZ;
-                const bh = getTerrainHeight(worldX, worldZ);
-                
-                // Set local coordinate correctly
-                notDeer.position.set(lx, bh, lz);
-                notDeer.rotation.y = random() * Math.PI * 2;
-                
-                chunkGroup.add(notDeer);
-                colliders.push({ x: worldX, z: worldZ, r: 1.0 });
-                chunkAnimals.push(notDeer);
-            }
-
-            scene.add(chunkGroup);
             return { group: chunkGroup, colliders: colliders, animals: chunkAnimals };
         }
 
@@ -903,14 +1041,25 @@
                     for (let z = cz - RENDER_DISTANCE; z <= cz + RENDER_DISTANCE; z++) {
                         const id = `${x},${z}`;
                         newActiveKeys.add(id);
-                        if (!activeChunks.has(id)) activeChunks.set(id, createChunk(x, z));
+                        if (!activeChunks.has(id)) {
+                            // Check memory cache first!
+                            if (chunkCache.has(id)) {
+                                const cachedChunk = chunkCache.get(id);
+                                scene.add(cachedChunk.group);
+                                activeChunks.set(id, cachedChunk);
+                            } else {
+                                const newChunk = createChunk(x, z);
+                                scene.add(newChunk.group);
+                                activeChunks.set(id, newChunk);
+                            }
+                        }
                     }
                 }
 
                 for (const [id, chunkData] of activeChunks.entries()) {
                     if (!newActiveKeys.has(id)) {
                         scene.remove(chunkData.group);
-                        chunkData.group.traverse(c => { if(c.geometry) c.geometry.dispose(); });
+                        chunkCache.set(id, chunkData); // Keep in memory cache instead of deleting
                         activeChunks.delete(id);
                     }
                 }
@@ -964,10 +1113,16 @@
             requestAnimationFrame(animate);
             const time = performance.now();
             const delta = (time - prevTime) / 1000;
-            
-            notDeerTimer += delta;
 
-            if (controls.isLocked) {
+            if (controls.isLocked && !isDead) {
+                // NOT DEER SPAWN TIMER
+                notDeerTimer += delta;
+                if (notDeerTimer > nextNotDeerThreshold) {
+                    notDeerTimer = 0;
+                    nextNotDeerThreshold = 120 + Math.random() * 120; // 2 to 4 minutes
+                    spawnNotDeerNow();
+                }
+
                 player.velocity.x -= player.velocity.x * 10.0 * delta;
                 player.velocity.z -= player.velocity.z * 10.0 * delta;
                 player.direction.z = Number(keys.KeyW) - Number(keys.KeyS);
@@ -1004,11 +1159,11 @@
                 camera.getWorldDirection(camDir);
                 flashlightTarget.position.lerp(camPos.clone().add(camDir.multiplyScalar(30)), 0.8);
                 
+                // Animal AI Logic
                 for (const [id, chunk] of activeChunks.entries()) {
                     if (chunk.animals) {
                         for (const animal of chunk.animals) {
                             
-                            // Always measure absolute distance to avoid double-offset logic bugs
                             const worldPos = new THREE.Vector3();
                             animal.getWorldPosition(worldPos);
                             const dist = worldPos.distanceTo(camera.position);
@@ -1034,7 +1189,6 @@
                                 if (animal.userData.state === 'intimidate') {
                                     animal.userData.scaleY = Math.min(animal.userData.scaleY + delta * 0.15, 1.5);
                                     
-                                    // Lurching effect as it grows
                                     animal.userData.lurchTimer += delta * 15;
                                     let lurch = 0;
                                     if (animal.userData.scaleY < 1.5) {
@@ -1043,15 +1197,13 @@
                                     animal.scale.y = animal.userData.scaleY + lurch;
                                     
                                     const currentBodyQuat = animal.quaternion.clone();
-                                    // Point the body explicitly at the player
                                     animal.lookAt(camera.position.x, worldPos.y, camera.position.z);
                                     const targetBodyQuat = animal.quaternion.clone();
                                     animal.quaternion.copy(currentBodyQuat);
                                     animal.quaternion.slerp(targetBodyQuat, 1.5 * delta);
                                 } else if (animal.userData.state === 'attack') {
-                                    // Extreme Aggression
                                     animal.lookAt(camera.position.x, worldPos.y, camera.position.z);
-                                    animal.translateZ(24 * delta); // Sprint towards player
+                                    animal.translateZ(24 * delta); 
                                     
                                     animal.getWorldPosition(worldPos);
                                     animal.position.y = getTerrainHeight(worldPos.x, worldPos.z);
@@ -1072,6 +1224,7 @@
                                     }
                                 }
                             } else {
+                                // STANDARD ANIMAL / CRITTER LOGIC
                                 if (animal.userData.state === 'idle') {
                                     if (dist < 45) {
                                         const currentQuat = animal.head.quaternion.clone();
@@ -1081,7 +1234,8 @@
                                         animal.head.quaternion.slerp(targetQuat, 5 * delta);
                                     }
                                     
-                                    const triggerDist = animal.userData.isRunner ? 35 : 18;
+                                    // Critters trigger sooner because they are skittish
+                                    const triggerDist = animal.userData.type === 'critter' ? 25 : (animal.userData.isRunner ? 35 : 18);
                                     
                                     if (dist < triggerDist) {
                                         animal.userData.state = 'fleeing';
@@ -1095,7 +1249,8 @@
                                             
                                             const targetPos = worldPos.clone().add(crossDir);
                                             animal.lookAt(targetPos);
-                                            animal.userData.speed = 13 + Math.random() * 3; 
+                                            // Critters are extremely fast
+                                            animal.userData.speed = animal.userData.type === 'critter' ? (18 + Math.random() * 4) : (13 + Math.random() * 3); 
                                         } else {
                                             const fleeDir = worldPos.clone().sub(camera.position);
                                             fleeDir.y = 0;
@@ -1106,18 +1261,16 @@
                                             animal.lookAt(targetPos);
                                             animal.userData.speed = 9;
                                         }
-                                        
                                         animal.head.rotation.set(0,0,0);
                                     }
                                 } else if (animal.userData.state === 'fleeing') {
-                                    // +Z translation moves forward based on our corrected model geometry
-                                    animal.translateZ((animal.userData.speed || 9) * delta); 
+                                    animal.translateZ(-(animal.userData.speed || 9) * delta); 
                                     
-                                    // Update height continuously as it runs over bumps
                                     animal.getWorldPosition(worldPos);
                                     animal.position.y = getTerrainHeight(worldPos.x, worldPos.z);
                                     
-                                    animal.userData.runTimer += delta * 25;
+                                    const runSpeed = animal.userData.type === 'critter' ? 40 : 25;
+                                    animal.userData.runTimer += delta * runSpeed;
                                     animal.body.position.y = Math.sin(animal.userData.runTimer) * 0.15;
                                     
                                     const legRotation = Math.sin(animal.userData.runTimer) * 0.5;
