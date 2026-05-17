@@ -137,6 +137,9 @@
         #lantern-display {
             position: absolute; top: 20px; left: 30px; color: #ffaa00; font-size: 1.5rem; z-index: 5; display: none; text-shadow: 0 0 5px #000; letter-spacing: 2px; font-weight: bold;
         }
+        #flare-display {
+            position: absolute; top: 50px; left: 30px; color: #ff3333; font-size: 1.5rem; z-index: 5; display: none; text-shadow: 0 0 5px #000; letter-spacing: 2px; font-weight: bold;
+        }
         #night-vision-overlay {
             display: none;
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -151,7 +154,7 @@
 
     <div id="ui-layer">
         <h1>THE INFINITE WOODS</h1>
-        <p>Expanded Memory & Night Vision</p>
+        <p>Thick Fog, UV Tracking & Flare Guns</p>
         <button id="start-btn">Click to Enter</button>
         <div class="controls">
             [ W A S D ] to Walk<br>
@@ -159,6 +162,8 @@
             [ C ] to Toggle Camera Mode<br>
             [ P ] to Take Photograph<br>
             [ L ] to Drop Lantern (5 total)<br>
+            [ F ] to Fire Flare Gun (2 total)<br>
+            [ U ] to Toggle UV / Blacklight<br>
             [ N ] to Toggle Night Vision
         </div>
     </div>
@@ -177,6 +182,7 @@
     </div>
     <div id="total-score-display">SCORE: 0</div>
     <div id="lantern-display">LANTERNS: 5</div>
+    <div id="flare-display">FLARES: 2</div>
     <div id="flash-overlay"></div>
 
     <div id="death-screen">
@@ -189,14 +195,17 @@
 
     <script>
         const CHUNK_SIZE = 60;
-        const RENDER_DISTANCE = 3; // Expanded visual distance
+        const RENDER_DISTANCE = 3; 
         const TREES_PER_CHUNK = 45;
         const BUSHES_PER_CHUNK = 50;
         
         let scene, camera, renderer, controls, ambientLight;
         let flashlight, flashlightTarget;
+        let lightningLight; // New light for thunderstorms
         let audioCtx, windGain;
         let isPlaying = false;
+        
+        let stars;
         
         const player = {
             height: 2.0,
@@ -209,19 +218,33 @@
 
         const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
         const activeChunks = new Map();
-        const chunkCache = new Map(); // Expands memory of generated chunks
+        const chunkCache = new Map(); 
         
         let currentChunkCoords = { x: 0, z: 0 };
         let notDeerTimer = 0;
         let nextNotDeerThreshold = 120 + Math.random() * 120; // 2 to 4 minutes
+        let cabinTimer = 0;
+        let nextCabinThreshold = 100 + Math.random() * 60; // Roughly 2 minutes
         let lockCooldown = false; 
         let isDead = false;
         
+        // Weather & Atmosphere Variables
+        let targetFogDensity = 0.048;
+        let fogTransitionTimer = 10;
+        let lightningTimer = 0;
+        let nextLightningThreshold = 20 + Math.random() * 40; // 20 to 60 seconds
+        let lightningIntensity = 0;
+
         let isCameraMode = false;
         let isNightVision = false;
+        let isUVMode = false;
+        
         let totalScore = 0;
         let lanternsLeft = 5;
         let placedLanterns = [];
+        
+        let flaresLeft = 2;
+        let activeFlares = [];
 
         function getTerrainHeight(x, z) {
             return Math.sin(x * 0.15) * Math.cos(z * 0.15) * 0.9;
@@ -296,6 +319,26 @@
                     ctx.fillStyle = `rgb(${8+val}, ${18+val}, ${10+val})`;
                     ctx.fillRect(x, y, w, h);
                 }
+            } else if (type === 'wood') {
+                ctx.fillStyle = '#1c1511'; // dark aged wood
+                ctx.fillRect(0, 0, width, height);
+                for (let i = 0; i < 2000; i++) {
+                    const x = Math.random() * width;
+                    const y = Math.random() * height;
+                    const w = 10 + Math.random() * 40; // horizontal grain
+                    const h = 1 + Math.random() * 2;
+                    const brightness = Math.random() * 40 - 20;
+                    const r = 35 + brightness;
+                    const g = 25 + brightness;
+                    const b = 18 + brightness;
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    ctx.fillRect(x, y, w, h);
+                }
+                // Vertical panel gaps
+                ctx.fillStyle = '#050403';
+                for (let x = 0; x < width; x += 16 + Math.random()*8) {
+                    ctx.fillRect(x, 0, 2 + Math.random() * 2, height);
+                }
             }
             
             const texture = new THREE.CanvasTexture(canvas);
@@ -304,10 +347,48 @@
             return texture;
         }
 
+        // Texture generators for hidden UV Lore
+        function createLoreTexture(type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.clearRect(0, 0, 128, 128); // Transparent background
+            ctx.fillStyle = '#00ffff'; // cyan glow
+            ctx.shadowColor = '#00ffff';
+            ctx.shadowBlur = 15;
+
+            if (type === 'footprint') {
+                ctx.beginPath();
+                ctx.ellipse(64, 80, 18, 28, 0, 0, Math.PI*2); // main pad
+                ctx.fill();
+                ctx.beginPath(); ctx.arc(38, 45, 8, 0, Math.PI*2); ctx.fill(); // left toe
+                ctx.beginPath(); ctx.arc(64, 35, 10, 0, Math.PI*2); ctx.fill(); // mid toe
+                ctx.beginPath(); ctx.arc(90, 45, 8, 0, Math.PI*2); ctx.fill(); // right toe
+            } else if (type === 'symbol') {
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 8;
+                ctx.beginPath();
+                ctx.arc(64, 64, 45, 0, Math.PI*2); // outer circle
+                ctx.stroke();
+                // Occult internal lines
+                ctx.beginPath(); ctx.moveTo(64, 19); ctx.lineTo(64, 109); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(19, 64); ctx.lineTo(109, 64); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(32, 32); ctx.lineTo(96, 96); ctx.stroke();
+            }
+            
+            const tex = new THREE.CanvasTexture(canvas);
+            return tex;
+        }
+
         const barkTexture = createOrganicTexture(512, 512, 'bark');
         const dirtTexture = createOrganicTexture(512, 512, 'dirt');
         const bushTexture = createOrganicTexture(256, 256, 'leaf');
         const canopyTexture = createOrganicTexture(256, 256, 'canopy');
+        const woodTexture = createOrganicTexture(512, 512, 'wood');
+        
+        const footprintTexture = createLoreTexture('footprint');
+        const symbolTexture = createLoreTexture('symbol');
 
         function mulberry32(a) {
             return function() {
@@ -316,6 +397,35 @@
               t ^= t + Math.imul(t ^ t >>> 7, t | 61);
               return ((t ^ t >>> 14) >>> 0) / 4294967296;
             }
+        }
+
+        function createNightSky() {
+            const starGeo = new THREE.BufferGeometry();
+            const starCount = 1000;
+            const posArray = new Float32Array(starCount * 3);
+            for(let i=0; i<starCount*3; i+=3) {
+                const r = 120 + Math.random() * 40; // High above the fog
+                const theta = 2 * Math.PI * Math.random();
+                const phi = Math.acos(2 * Math.random() - 1);
+                
+                const y = Math.abs(r * Math.cos(phi));
+                const x = r * Math.sin(phi) * Math.cos(theta);
+                const z = r * Math.sin(phi) * Math.sin(theta);
+                
+                posArray[i] = x;
+                posArray[i+1] = y + 20; 
+                posArray[i+2] = z;
+            }
+            starGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const starMat = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.5,
+                transparent: true,
+                opacity: 0.7,
+                fog: false // crucial to bypass the heavy fog
+            });
+            stars = new THREE.Points(starGeo, starMat);
+            scene.add(stars);
         }
 
         function init() {
@@ -338,6 +448,11 @@
             ambientLight = new THREE.HemisphereLight(0x0a0a1a, 0x020202, 0.08);
             scene.add(ambientLight);
 
+            // Lightning Directional Light
+            lightningLight = new THREE.DirectionalLight(0xccddff, 0);
+            lightningLight.position.set(0.5, 1, 0.5); // Angled from above
+            scene.add(lightningLight);
+
             flashlight = new THREE.SpotLight(0xffcc77, 24); 
             flashlight.position.set(0, 0, 0);
             flashlight.angle = (Math.PI / 7) * 1.2; 
@@ -353,6 +468,8 @@
             scene.add(flashlightTarget);
             flashlight.target = flashlightTarget;
 
+            createNightSky();
+
             controls = new THREE.PointerLockControls(camera, document.body);
             
             const startBtn = document.getElementById('start-btn');
@@ -366,6 +483,7 @@
                 setTimeout(() => document.getElementById('ui-layer').style.display = 'none', 500);
                 if(!isCameraMode) document.getElementById('crosshair').style.display = 'block';
                 document.getElementById('lantern-display').style.display = 'block';
+                document.getElementById('flare-display').style.display = 'block';
                 if (!isPlaying) { initAudio(); isPlaying = true; }
                 if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
             });
@@ -378,6 +496,7 @@
                 
                 if(!isCameraMode) document.getElementById('crosshair').style.display = 'none';
                 document.getElementById('lantern-display').style.display = 'none';
+                document.getElementById('flare-display').style.display = 'none';
                 
                 lockCooldown = true;
                 startBtn.textContent = 'Wait...';
@@ -412,11 +531,17 @@
                 if(e.code === 'KeyN' && controls.isLocked && !isDead) {
                     toggleNightVision();
                 }
+                if(e.code === 'KeyU' && controls.isLocked && !isDead) {
+                    toggleUVMode();
+                }
                 if(e.code === 'KeyP' && isCameraMode && controls.isLocked && !isDead) {
                     takePhoto();
                 }
                 if(e.code === 'KeyL' && controls.isLocked && !isDead) {
                     dropLantern();
+                }
+                if(e.code === 'KeyF' && controls.isLocked && !isDead) {
+                    fireFlare();
                 }
             });
             document.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.code)) keys[e.code] = false; });
@@ -428,18 +553,36 @@
 
         function toggleNightVision() {
             isNightVision = !isNightVision;
+            if (isNightVision && isUVMode) toggleUVMode(); // Turn off UV if activating NV
+            
             document.getElementById('night-vision-overlay').style.display = isNightVision ? 'block' : 'none';
             if (isNightVision) {
                 scene.fog.color.setHex(0x114411);
                 scene.background.setHex(0x114411);
                 ambientLight.intensity = 1.2;
                 ambientLight.color.setHex(0x55ff55);
-                flashlight.intensity = 3; // Dim flashlight so night vision works cleanly
+                flashlight.intensity = 3; 
+                stars.material.color.setHex(0x55ff55);
             } else {
                 scene.fog.color.setHex(0x010102);
                 scene.background.setHex(0x010102);
                 ambientLight.intensity = 0.08;
                 ambientLight.color.setHex(0x0a0a1a);
+                flashlight.intensity = 24;
+                stars.material.color.setHex(0xffffff);
+            }
+        }
+        
+        function toggleUVMode() {
+            isUVMode = !isUVMode;
+            if (isUVMode) {
+                if (isNightVision) toggleNightVision(); // Turn off NV if activating UV
+                flashlight.color.setHex(0x5500ff); // Deep purple UV light
+                flashlight.distance = 60; // Shorter distance than normal
+                flashlight.intensity = 15;
+            } else {
+                flashlight.color.setHex(0xffcc77); // Back to normal warm amber
+                flashlight.distance = 100;
                 flashlight.intensity = 24;
             }
         }
@@ -454,6 +597,8 @@
             
             notDeerTimer = 0;
             nextNotDeerThreshold = 120 + Math.random() * 120;
+            cabinTimer = 0;
+            nextCabinThreshold = 100 + Math.random() * 60;
             totalScore = 0;
             updateScoreDisplay();
 
@@ -468,13 +613,17 @@
             });
             placedLanterns = [];
             
+            flaresLeft = 2;
+            updateFlareDisplay();
+            activeFlares.forEach(f => scene.remove(f.group));
+            activeFlares = [];
+            
             for (const [id, chunkData] of activeChunks.entries()) {
                 scene.remove(chunkData.group);
                 chunkData.group.traverse(c => { if(c.geometry) c.geometry.dispose(); });
             }
             activeChunks.clear();
             
-            // Clear memory cache so you don't load old dead chunks
             for (const [id, chunkData] of chunkCache.entries()) {
                 chunkData.group.traverse(c => { if(c.geometry) c.geometry.dispose(); });
             }
@@ -511,12 +660,76 @@
             noise.stop(t + 0.05);
         }
 
+        function playThunderSound() {
+            if (!audioCtx || audioCtx.state === 'suspended') return;
+            const t = audioCtx.currentTime;
+            
+            const bufferSize = audioCtx.sampleRate * 4.0; // 4 seconds of thunder
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            
+            // Deep rumble filter
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(150, t); 
+            filter.frequency.exponentialRampToValueAtTime(40, t + 4.0); 
+            
+            // Thunder envelope
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(2.0, t + 0.2); // attack
+            gain.gain.exponentialRampToValueAtTime(0.01, t + 4.0); // decay
+            
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+            noise.start(t);
+            noise.stop(t + 4.0);
+        }
+        
+        function playFlareSound() {
+            if (!audioCtx || audioCtx.state === 'suspended') return;
+            const t = audioCtx.currentTime;
+            
+            const bufferSize = audioCtx.sampleRate * 20.0; // 20s hiss
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 800; 
+            
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(1.0, t + 0.5); // "pop"
+            gain.gain.linearRampToValueAtTime(0.4, t + 1.0); // transition to hiss
+            gain.gain.linearRampToValueAtTime(0, t + 20.0); // fade out
+            
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+            noise.start(t);
+            noise.stop(t + 20.0);
+        }
+
         function updateScoreDisplay() {
             document.getElementById('total-score-display').innerText = `SCORE: ${totalScore}`;
         }
 
         function updateLanternDisplay() {
             document.getElementById('lantern-display').innerText = `LANTERNS: ${lanternsLeft}`;
+        }
+        
+        function updateFlareDisplay() {
+            document.getElementById('flare-display').innerText = `FLARES: ${flaresLeft}`;
         }
 
         function dropLantern() {
@@ -562,6 +775,36 @@
             scene.add(lanternGroup);
             placedLanterns.push(lanternGroup);
         }
+        
+        function fireFlare() {
+            if (flaresLeft <= 0) return;
+            flaresLeft--;
+            updateFlareDisplay();
+            playFlareSound();
+            
+            const flareGroup = new THREE.Group();
+            
+            // Bright red glowing core
+            const flareMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(0.5, 8, 8),
+                new THREE.MeshBasicMaterial({color: 0xffaaaa})
+            );
+            flareGroup.add(flareMesh);
+            
+            // Intense red light that casts shadows
+            const flareLight = new THREE.PointLight(0xff2222, 40, 250);
+            flareLight.castShadow = true;
+            flareLight.shadow.mapSize.width = 1024;
+            flareLight.shadow.mapSize.height = 1024;
+            flareGroup.add(flareLight);
+            
+            // Launch straight up from player
+            flareGroup.position.copy(camera.position);
+            flareGroup.position.y += 45; // Start high up
+            
+            scene.add(flareGroup);
+            activeFlares.push({ group: flareGroup, light: flareLight, life: 20 }); // lasts 20s
+        }
 
         function takePhoto() {
             playShutterSound();
@@ -598,13 +841,11 @@
                         if (frustum.containsPoint(worldPos)) {
                             const screenPos = worldPos.clone().project(camera);
                             
-                            // Check if inside the camera bounds
                             if (Math.abs(screenPos.x) < 0.5 && Math.abs(screenPos.y) < 0.5) {
                                 const dist = camera.position.distanceTo(worldPos);
-                                const maxDist = isNightVision ? 35 : 25; // Night vision helps see further
+                                const maxDist = isNightVision ? 35 : 25; 
                                 
                                 if (dist < maxDist) {
-                                    // RAYCAST LINE-OF-SIGHT CHECK
                                     const dir = worldPos.clone().sub(camera.position).normalize();
                                     const raycaster = new THREE.Raycaster(camera.position, dir);
                                     const intersects = raycaster.intersectObjects(scene.children, true);
@@ -620,9 +861,8 @@
                                             if(current === animal) { isAnimalHit = true; break; }
                                             current = current.parent;
                                         }
-                                        if (isAnimalHit) break; // Reached the animal clearly!
+                                        if (isAnimalHit) break; 
                                         
-                                        // If it hit a tree/bush (InstancedMesh) or ground (Plane) first
                                         if (obj.isInstancedMesh || obj.geometry.type === 'PlaneGeometry') {
                                             if (inter.distance < dist - 0.5) {
                                                 blocked = true;
@@ -691,8 +931,14 @@
             bumpMap: dirtTexture,
             bumpScale: 0.04
         });
+        const woodMat = new THREE.MeshStandardMaterial({
+            color: 0x332a22,
+            roughness: 1.0,
+            map: woodTexture,
+            bumpMap: woodTexture,
+            bumpScale: 0.1
+        });
 
-        // Small skittish critter
         function createCritter() {
             const group = new THREE.Group();
             group.userData = { state: 'idle', type: 'critter', runTimer: 0 };
@@ -709,7 +955,7 @@
             bodyGroup.add(torso);
 
             const headGroup = new THREE.Group();
-            headGroup.position.set(0, 0.5, -0.4); // -Z is forward
+            headGroup.position.set(0, 0.5, -0.4); 
 
             const headGeo = new THREE.BoxGeometry(0.2, 0.2, 0.3);
             const head = new THREE.Mesh(headGeo, furMat);
@@ -724,7 +970,7 @@
             headGroup.add(earL, earR);
 
             const eyeGeo = new THREE.SphereGeometry(0.03, 8, 8);
-            const eyeMat = new THREE.MeshBasicMaterial({color: 0xffaa00}); // Orange eyes
+            const eyeMat = new THREE.MeshBasicMaterial({color: 0xffaa00}); 
             const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
             eyeL.position.set(-0.06, 0.05, -0.14); 
             const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
@@ -750,7 +996,6 @@
             return group;
         }
 
-        // Standard animal (deer shape)
         function createAnimal() {
             const group = new THREE.Group();
             group.userData = { state: 'idle', type: 'animal', runTimer: 0 };
@@ -883,12 +1128,52 @@
             return group;
         }
 
+        function createCabin(chunkLoreArr) {
+            const group = new THREE.Group();
+            
+            // Main structure (shed shape)
+            const bodyGeo = new THREE.BoxGeometry(5, 3.5, 4);
+            bodyGeo.translate(0, 1.75, 0); 
+            const body = new THREE.Mesh(bodyGeo, woodMat);
+            body.castShadow = true;
+            body.receiveShadow = true;
+            group.add(body);
+            
+            // Slanted Roof
+            const roofGeo = new THREE.BoxGeometry(5.5, 0.4, 4.8);
+            roofGeo.rotateX(-0.15); // slant backwards
+            roofGeo.translate(0, 3.65, 0); 
+            const roofMat = new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.9});
+            const roof = new THREE.Mesh(roofGeo, roofMat);
+            roof.castShadow = true;
+            roof.receiveShadow = true;
+            group.add(roof);
+
+            // Doorway (pitch black to simulate dark interior)
+            const doorGeo = new THREE.BoxGeometry(1.2, 2.2, 0.1);
+            doorGeo.translate(0, 1.1, 2.01);
+            const doorMat = new THREE.MeshBasicMaterial({color: 0x010101});
+            const door = new THREE.Mesh(doorGeo, doorMat);
+            group.add(door);
+            
+            // Hidden UV Lore: Occult Symbol on back wall
+            const symbolMesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(2, 2),
+                new THREE.MeshBasicMaterial({ map: symbolTexture, transparent: true, opacity: 0, depthWrite: false })
+            );
+            symbolMesh.position.set(0, 1.8, -2.01); // Back wall, outside
+            symbolMesh.rotation.y = Math.PI; // Face outwards from back
+            group.add(symbolMesh);
+            if (chunkLoreArr) chunkLoreArr.push(symbolMesh);
+
+            return group;
+        }
+
         function spawnNotDeerNow() {
             const camDir = new THREE.Vector3();
             camera.getWorldDirection(camDir);
             camDir.y = 0; camDir.normalize();
             
-            // Offset angle slightly so it's not perfectly center
             camDir.applyAxisAngle(new THREE.Vector3(0,1,0), (Math.random() - 0.5) * 0.8);
             
             const spawnDist = 35 + Math.random() * 10;
@@ -902,7 +1187,6 @@
             let chunk = activeChunks.get(chunkId);
             if (!chunk && chunkCache.has(chunkId)) chunk = chunkCache.get(chunkId);
             
-            // Fallback to player's chunk if distance bounds push it into unloaded territory
             if (!chunk) {
                  const pcx = Math.floor((camera.position.x + CHUNK_SIZE / 2) / CHUNK_SIZE);
                  const pcz = Math.floor((camera.position.z + CHUNK_SIZE / 2) / CHUNK_SIZE);
@@ -934,6 +1218,57 @@
             const random = mulberry32(seed);
             const colliders = []; 
             const chunkAnimals = [];
+            const chunkLore = []; // Tracks UV hidden lore
+            
+            let hasCabin = false;
+            let cabinLocalX = 0;
+            let cabinLocalZ = 0;
+
+            if (cabinTimer > nextCabinThreshold) {
+                cabinTimer = 0;
+                nextCabinThreshold = 100 + Math.random() * 60;
+                
+                hasCabin = true;
+                cabinLocalX = (random() - 0.5) * (CHUNK_SIZE - 15);
+                cabinLocalZ = (random() - 0.5) * (CHUNK_SIZE - 15);
+                
+                const cabin = createCabin(chunkLore);
+                const worldX = cabinLocalX + chunkWorldX;
+                const worldZ = cabinLocalZ + chunkWorldZ;
+                const bh = getTerrainHeight(worldX, worldZ) - 0.2; 
+                
+                cabin.position.set(cabinLocalX, bh, cabinLocalZ);
+                cabin.rotation.y = random() * Math.PI;
+                
+                chunkGroup.add(cabin);
+                colliders.push({ x: worldX, z: worldZ, r: 3.5 }); 
+            }
+            
+            // Add some Hidden Footprint Trails randomly
+            if (random() > 0.6) {
+                const startX = (random() - 0.5) * (CHUNK_SIZE - 10);
+                const startZ = (random() - 0.5) * (CHUNK_SIZE - 10);
+                const trailAngle = random() * Math.PI * 2;
+                
+                for(let f = 0; f < 3 + Math.floor(random() * 3); f++) {
+                    const printMesh = new THREE.Mesh(
+                        new THREE.PlaneGeometry(1.2, 1.2),
+                        new THREE.MeshBasicMaterial({ map: footprintTexture, transparent: true, opacity: 0, depthWrite: false })
+                    );
+                    const fx = startX + Math.cos(trailAngle) * (f * 2.5);
+                    const fz = startZ + Math.sin(trailAngle) * (f * 2.5);
+                    
+                    printMesh.rotation.x = -Math.PI / 2;
+                    printMesh.rotation.z = -trailAngle - Math.PI/2;
+                    
+                    const printWorldX = fx + chunkWorldX;
+                    const printWorldZ = fz + chunkWorldZ;
+                    printMesh.position.set(fx, getTerrainHeight(printWorldX, printWorldZ) + 0.05, fz);
+                    
+                    chunkGroup.add(printMesh);
+                    chunkLore.push(printMesh);
+                }
+            }
 
             const groundGeom = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, 10, 10);
             groundGeom.rotateX(-Math.PI / 2);
@@ -958,6 +1293,12 @@
             for (let i = 0; i < TREES_PER_CHUNK; i++) {
                 const lx = (random() - 0.5) * (CHUNK_SIZE - 6);
                 const lz = (random() - 0.5) * (CHUNK_SIZE - 6);
+                
+                if (hasCabin) {
+                    const distToCabin = Math.hypot(lx - cabinLocalX, lz - cabinLocalZ);
+                    if (distToCabin < 8.0) continue; // Prevent trees from clipping cabin
+                }
+                
                 const bh = getTerrainHeight(lx + chunkWorldX, lz + chunkWorldZ) - 0.2;
                 const thickness = 0.5 + random() * 1.3;
                 const height = 14 + random() * 16;
@@ -1023,7 +1364,7 @@
                 chunkAnimals.push(animal);
             }
 
-            return { group: chunkGroup, colliders: colliders, animals: chunkAnimals };
+            return { group: chunkGroup, colliders: colliders, animals: chunkAnimals, hiddenLore: chunkLore };
         }
 
         function updateChunks() {
@@ -1042,7 +1383,6 @@
                         const id = `${x},${z}`;
                         newActiveKeys.add(id);
                         if (!activeChunks.has(id)) {
-                            // Check memory cache first!
                             if (chunkCache.has(id)) {
                                 const cachedChunk = chunkCache.get(id);
                                 scene.add(cachedChunk.group);
@@ -1059,7 +1399,7 @@
                 for (const [id, chunkData] of activeChunks.entries()) {
                     if (!newActiveKeys.has(id)) {
                         scene.remove(chunkData.group);
-                        chunkCache.set(id, chunkData); // Keep in memory cache instead of deleting
+                        chunkCache.set(id, chunkData); 
                         activeChunks.delete(id);
                     }
                 }
@@ -1115,11 +1455,62 @@
             const delta = (time - prevTime) / 1000;
 
             if (controls.isLocked && !isDead) {
-                // NOT DEER SPAWN TIMER
+                
+                // Weather: Rolling Fog
+                fogTransitionTimer -= delta;
+                if (fogTransitionTimer <= 0) {
+                    // Random density: 0.02 (light) up to 0.22 (extreme pea soup)
+                    targetFogDensity = 0.02 + Math.random() * 0.20; 
+                    fogTransitionTimer = 15 + Math.random() * 30; // Shift every 15-45s
+                }
+                // Smoothly lerp fog density
+                scene.fog.density += (targetFogDensity - scene.fog.density) * delta * 0.1;
+
+                // Weather: Thunderstorms
+                lightningTimer += delta;
+                if (lightningTimer > nextLightningThreshold) {
+                    lightningTimer = 0;
+                    nextLightningThreshold = 20 + Math.random() * 60; // 20 to 80s between strikes
+                    
+                    lightningIntensity = 3 + Math.random() * 5; // Intense flash
+                    
+                    // Delay thunder sound based on simulated distance (1 to 4 seconds)
+                    setTimeout(playThunderSound, 1000 + Math.random() * 3000);
+                    
+                    // Secondary rapid flicker
+                    if (Math.random() > 0.4) {
+                        setTimeout(() => { lightningIntensity = 2 + Math.random() * 3; }, 150 + Math.random() * 200);
+                    }
+                }
+
+                // Process lightning decay and sky coloring
+                if (lightningIntensity > 0) {
+                    lightningIntensity -= delta * 20; // Rapid fade
+                    if (lightningIntensity < 0) lightningIntensity = 0;
+                }
+                lightningLight.intensity = lightningIntensity;
+
+                const baseColor = isNightVision ? new THREE.Color(0x114411) : new THREE.Color(0x010102);
+                if (lightningIntensity > 0) {
+                    const flashColor = isNightVision ? new THREE.Color(0x88ff88) : new THREE.Color(0x556688);
+                    const lerpFactor = Math.min(lightningIntensity / 3, 1);
+                    scene.background = baseColor.clone().lerp(flashColor, lerpFactor);
+                    scene.fog.color = baseColor.clone().lerp(flashColor, lerpFactor);
+                } else {
+                    scene.background = baseColor;
+                    scene.fog.color = baseColor;
+                }
+                
+                if (stars) {
+                    stars.position.x = camera.position.x;
+                    stars.position.z = camera.position.z;
+                }
+
                 notDeerTimer += delta;
+                cabinTimer += delta;
                 if (notDeerTimer > nextNotDeerThreshold) {
                     notDeerTimer = 0;
-                    nextNotDeerThreshold = 120 + Math.random() * 120; // 2 to 4 minutes
+                    nextNotDeerThreshold = 120 + Math.random() * 120; 
                     spawnNotDeerNow();
                 }
 
@@ -1159,7 +1550,48 @@
                 camera.getWorldDirection(camDir);
                 flashlightTarget.position.lerp(camPos.clone().add(camDir.multiplyScalar(30)), 0.8);
                 
-                // Animal AI Logic
+                // Process Active Flare Guns
+                for (let i = activeFlares.length - 1; i >= 0; i--) {
+                    let f = activeFlares[i];
+                    f.life -= delta;
+                    f.group.position.y -= 1.8 * delta; // Descending parachute
+                    f.light.intensity = 35 + Math.random() * 10; // Harsh flicker
+                    if (f.life <= 0) {
+                        scene.remove(f.group);
+                        activeFlares.splice(i, 1);
+                    }
+                }
+                
+                // Process Lore Visibility (UV Mode)
+                for (const [id, chunk] of activeChunks.entries()) {
+                    if (chunk.hiddenLore) {
+                        for (const lore of chunk.hiddenLore) {
+                            if (isUVMode) {
+                                const loreWorldPos = new THREE.Vector3();
+                                lore.getWorldPosition(loreWorldPos);
+                                const dist = camera.position.distanceTo(loreWorldPos);
+                                if (dist < 35) {
+                                    const dirToLore = loreWorldPos.clone().sub(camera.position).normalize();
+                                    const viewDir = new THREE.Vector3();
+                                    camera.getWorldDirection(viewDir);
+                                    const angle = viewDir.angleTo(dirToLore);
+                                    
+                                    if (angle < flashlight.angle) {
+                                        lore.material.opacity = Math.max(0, 1 - (dist / 35));
+                                    } else {
+                                        lore.material.opacity = 0;
+                                    }
+                                } else {
+                                    lore.material.opacity = 0;
+                                }
+                            } else {
+                                lore.material.opacity = 0; // Invisible normally
+                            }
+                        }
+                    }
+                }
+                
+                // Process Animal AI
                 for (const [id, chunk] of activeChunks.entries()) {
                     if (chunk.animals) {
                         for (const animal of chunk.animals) {
@@ -1224,7 +1656,6 @@
                                     }
                                 }
                             } else {
-                                // STANDARD ANIMAL / CRITTER LOGIC
                                 if (animal.userData.state === 'idle') {
                                     if (dist < 45) {
                                         const currentQuat = animal.head.quaternion.clone();
@@ -1234,7 +1665,6 @@
                                         animal.head.quaternion.slerp(targetQuat, 5 * delta);
                                     }
                                     
-                                    // Critters trigger sooner because they are skittish
                                     const triggerDist = animal.userData.type === 'critter' ? 25 : (animal.userData.isRunner ? 35 : 18);
                                     
                                     if (dist < triggerDist) {
@@ -1249,7 +1679,6 @@
                                             
                                             const targetPos = worldPos.clone().add(crossDir);
                                             animal.lookAt(targetPos);
-                                            // Critters are extremely fast
                                             animal.userData.speed = animal.userData.type === 'critter' ? (18 + Math.random() * 4) : (13 + Math.random() * 3); 
                                         } else {
                                             const fleeDir = worldPos.clone().sub(camera.position);
